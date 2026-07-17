@@ -1,0 +1,766 @@
+{
+  "name": "AI System for News Bias and Misinformation Analysis with Responsible AI Considerations",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2944,
+        -688
+      ],
+      "id": "1b972397-8c8d-4848-b42a-e4c0024247ad",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4c6298cc-9683-4d70-a284-ea6db6686eb3",
+              "name": "source",
+              "value": "=",
+              "type": "string"
+            },
+            {
+              "id": "1adacec7-25ad-401b-b3b5-560259713e9a",
+              "name": "title",
+              "value": "={{$json.title}}",
+              "type": "string"
+            },
+            {
+              "id": "b009921d-acf9-4dd0-ae48-d42dd6359401",
+              "name": "link",
+              "value": "={{$json.link}}",
+              "type": "string"
+            },
+            {
+              "id": "199f545e-9410-4fc2-8dfd-7d8056014b30",
+              "name": "llm_article",
+              "value": "={{$json.output[0].content[0].text}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -2320,
+        1776
+      ],
+      "id": "4bb4fa86-c2ba-4e9d-b631-23d1b3dd5ae3",
+      "name": "Edit Fields",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "url": "={{$json.link}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -1024,
+        -848
+      ],
+      "id": "e323ef6a-413a-44fa-9b4d-460ed60b1192",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "language": "pythonNative",
+        "pythonCode": "output_items = []\n\npositive_words = [\n    \"good\", \"positive\", \"successful\", \"improve\", \"support\",\n    \"safe\", \"benefit\", \"progress\", \"strong\", \"stable\"\n]\n\nnegative_words = [\n    \"bad\", \"negative\", \"failure\", \"crisis\", \"threat\",\n    \"dangerous\", \"risk\", \"fear\", \"attack\", \"chaos\",\n    \"pressure\", \"warning\", \"scandal\", \"controversial\"\n]\n\nbias_terms = [\n    \"crisis\", \"threat\", \"fear\", \"radical\", \"extremist\",\n    \"dangerous\", \"outrage\", \"illegal\", \"violent\", \"attack\",\n    \"chaos\", \"controversial\", \"allegation\", \"accused\",\n    \"failure\", \"scandal\", \"pressure\", \"warning\"\n]\n\ndef clean_words(text):\n    text = text.lower()\n    symbols = [\".\", \",\", \":\", \";\", \"!\", \"?\", '\"', \"'\", \"(\", \")\", \"[\", \"]\", \"{\", \"}\", \"-\", \"_\", \"/\", \"\\\\\", \"\\n\", \"\\t\"]\n    for symbol in symbols:\n        text = text.replace(symbol, \" \")\n    return text.split()\n\ndef split_sentences(text):\n    text = text.replace(\"?\", \".\").replace(\"!\", \".\")\n    parts = text.split(\".\")\n    sentences = []\n    for p in parts:\n        p = p.strip()\n        if p != \"\":\n            sentences.append(p)\n    return sentences\n\ndef count_terms(words, term_list):\n    count = 0\n    for word in words:\n        if word in term_list:\n            count = count + 1\n    return count\n\ndef simple_sentiment(words):\n    if len(words) == 0:\n        return 0\n\n    pos = count_terms(words, positive_words)\n    neg = count_terms(words, negative_words)\n\n    return round((pos - neg) / len(words), 4)\n\ndef similarity_score(words1, words2):\n    if len(words1) == 0 or len(words2) == 0:\n        return 0\n\n    unique1 = []\n    unique2 = []\n\n    for w in words1:\n        if w not in unique1:\n            unique1.append(w)\n\n    for w in words2:\n        if w not in unique2:\n            unique2.append(w)\n\n    overlap = 0\n    for w in unique1:\n        if w in unique2:\n            overlap = overlap + 1\n\n    total_unique = len(unique1) + len(unique2)\n\n    if total_unique == 0:\n        return 0\n\n    return round((2 * overlap) / total_unique, 4)\n\nfor item in _items:\n    data = item[\"json\"]\n\n    source = data.get(\"source\", \"\")\n    title = data.get(\"title\", \"\")\n    link = data.get(\"link\", \"\")\n    original_article = data.get(\"original_article\", \"\")\n    llm_article = data.get(\"llm_article\", \"\")\n\n    original_words = clean_words(original_article)\n    llm_words = clean_words(llm_article)\n\n    original_sentences = split_sentences(original_article)\n    llm_sentences = split_sentences(llm_article)\n\n    original_bias_count = count_terms(original_words, bias_terms)\n    llm_bias_count = count_terms(llm_words, bias_terms)\n\n    original_word_bias = round(original_bias_count / len(original_words), 4) if len(original_words) > 0 else 0\n    llm_word_bias = round(llm_bias_count / len(llm_words), 4) if len(llm_words) > 0 else 0\n\n    original_sentence_bias = round(original_bias_count / len(original_sentences), 4) if len(original_sentences) > 0 else 0\n    llm_sentence_bias = round(llm_bias_count / len(llm_sentences), 4) if len(llm_sentences) > 0 else 0\n\n    original_document_bias = round((original_word_bias + original_sentence_bias) / 2, 4)\n    llm_document_bias = round((llm_word_bias + llm_sentence_bias) / 2, 4)\n\n    bias_difference = round(llm_document_bias - original_document_bias, 4)\n\n    original_sentiment = simple_sentiment(original_words)\n    llm_sentiment = simple_sentiment(llm_words)\n\n    factual_overlap = similarity_score(original_words, llm_words)\n    misinformation_risk = round(1 - factual_overlap, 4)\n\n    if bias_difference > 0:\n        interpretation = \"LLM article appears more biased than the original article\"\n    elif bias_difference < 0:\n        interpretation = \"LLM article appears less biased than the original article\"\n    else:\n        interpretation = \"LLM article shows similar bias level to the original article\"\n\n    output_items.append({\n        \"json\": {\n            \"source\": source,\n            \"title\": title,\n            \"link\": link,\n\n            \"original_word_count\": len(original_words),\n            \"llm_word_count\": len(llm_words),\n\n            \"original_bias_word_count\": original_bias_count,\n            \"llm_bias_word_count\": llm_bias_count,\n\n            \"original_word_bias\": original_word_bias,\n            \"llm_word_bias\": llm_word_bias,\n\n            \"original_sentence_count\": len(original_sentences),\n            \"llm_sentence_count\": len(llm_sentences),\n\n            \"original_sentence_bias\": original_sentence_bias,\n            \"llm_sentence_bias\": llm_sentence_bias,\n\n            \"original_document_bias\": original_document_bias,\n            \"llm_document_bias\": llm_document_bias,\n\n            \"bias_difference\": bias_difference,\n            \"original_sentiment\": original_sentiment,\n            \"llm_sentiment\": llm_sentiment,\n\n            \"factual_overlap\": factual_overlap,\n            \"misinformation_risk\": misinformation_risk,\n\n            \"interpretation\": interpretation\n        }\n    })\n\nreturn output_items"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -352,
+        -688
+      ],
+      "id": "c731aa24-dea4-4f77-b126-bb545934e965",
+      "name": "Bias Analysis Python Node"
+    },
+    {
+      "parameters": {
+        "language": "pythonNative",
+        "pythonCode": "output_items = []\n\nfor item in _items:\n    html = item[\"json\"].get(\"data\", \"\")\n\n    for pair in [\n        [\"<script\", \"</script>\"],\n        [\"<style\", \"</style>\"],\n        [\"<noscript\", \"</noscript>\"]\n    ]:\n        start_tag = pair[0]\n        end_tag = pair[1]\n\n        while start_tag in html.lower():\n            lower_html = html.lower()\n            start = lower_html.find(start_tag)\n            end = lower_html.find(end_tag, start)\n\n            if start == -1 or end == -1:\n                break\n\n            html = html[:start] + \" \" + html[end + len(end_tag):]\n\n    text = \"\"\n    inside_tag = False\n\n    for char in html:\n        if char == \"<\":\n            inside_tag = True\n            text = text + \" \"\n        elif char == \">\":\n            inside_tag = False\n            text = text + \" \"\n        elif inside_tag == False:\n            text = text + char\n\n    replacements = {\n        \"&nbsp;\": \" \",\n        \"&amp;\": \"&\",\n        \"&quot;\": '\"',\n        \"&#x27;\": \"'\",\n        \"&#39;\": \"'\",\n        \"&rsquo;\": \"'\",\n        \"&lsquo;\": \"'\",\n        \"&rdquo;\": '\"',\n        \"&ldquo;\": '\"'\n    }\n\n    for old in replacements:\n        text = text.replace(old, replacements[old])\n\n    text = \" \".join(text.split())\n\n    output_items.append({\n        \"json\": {\n            \"original_article\": text\n        }\n    })\n\nreturn output_items"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -768,
+        -848
+      ],
+      "id": "193b2601-5d4e-468a-af52-87f9e73b0880",
+      "name": "HTML Extract with Python Code Node"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -2800,
+        1376
+      ],
+      "id": "7b8fcd99-1122-4a1f-81d7-dc2b137106ba",
+      "name": "Merge2",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "url": "https://feeds.bbci.co.uk/news/rss.xml",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        -2720,
+        -784
+      ],
+      "id": "cabebf71-a746-4ee2-b9e8-1cec16ca4ac5",
+      "name": "BBC RSS Feed Collector"
+    },
+    {
+      "parameters": {
+        "url": "https://www.theguardian.com/world/rss",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        -2720,
+        -592
+      ],
+      "id": "173412c1-f4eb-4478-b1eb-3d951e0245e8",
+      "name": "Guardian RSS Feed Collector"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "22108a5e-e0aa-4ce6-aaa5-a416ec657605",
+              "name": "source",
+              "value": "BBC",
+              "type": "string"
+            },
+            {
+              "id": "3b772503-49d2-4166-92c5-9c044fc93711",
+              "name": "title",
+              "value": "={{$json.title}}",
+              "type": "string"
+            },
+            {
+              "id": "dd151ec1-e051-4ae5-8ec2-39a814eac414",
+              "name": "link",
+              "value": "={{$json.link}}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -2496,
+        -784
+      ],
+      "id": "bbb1b4b8-ad19-4ad5-96ba-4d48506cfc0d",
+      "name": "BBC Article Formatter"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "eb4d03b9-14ac-4194-9202-e7c584b820cb",
+              "name": "source",
+              "value": "Guardian",
+              "type": "string"
+            },
+            {
+              "id": "ac0d3c21-ea13-4ce8-a9a7-0068c13bc3b5",
+              "name": "title",
+              "value": "={{$json.title}}",
+              "type": "string"
+            },
+            {
+              "id": "e71a8077-07c8-4973-906b-d3482f01afac",
+              "name": "link",
+              "value": "={{$json.link}}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -2496,
+        -592
+      ],
+      "id": "3486b362-64ab-49b4-8872-b53dd1810a8d",
+      "name": "Guardian Article Formatter"
+    },
+    {
+      "parameters": {
+        "maxItems": 5,
+        "keep": "lastItems"
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        -2256,
+        -784
+      ],
+      "id": "d6cc3487-05f5-42cc-9369-4732cf470382",
+      "name": "BBC Article Limiter"
+    },
+    {
+      "parameters": {
+        "maxItems": 5
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        -2272,
+        -592
+      ],
+      "id": "9cb2c003-1d7e-4bca-8e68-0707b80abe81",
+      "name": "Guardian Article Limiter"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -2048,
+        -688
+      ],
+      "id": "4d0a1150-cf32-47b2-9dd2-349a8c3c90a0",
+      "name": "BBC Guardian Article Merger"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fb6ee3f7-4473-4a1c-8f28-97b2344d1224",
+              "name": "source:",
+              "value": "={{$json.source}}",
+              "type": "string"
+            },
+            {
+              "id": "fb095b1b-9a76-4782-9fa7-be3be61b4343",
+              "name": "title:",
+              "value": "={{$json.title}}",
+              "type": "string"
+            },
+            {
+              "id": "1dd0a2ab-6cda-4011-ae46-c77771745a48",
+              "name": "link:",
+              "value": "={{$json.link}}",
+              "type": "string"
+            },
+            {
+              "id": "964f9cb1-bf42-4a2d-9d3d-4a4286c38d92",
+              "name": "original_article:",
+              "value": "={{$json.content}}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1824,
+        -688
+      ],
+      "id": "2f79cc3b-0cf2-4d01-a081-2e91c83fffb1",
+      "name": "Article Preparation Layer"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "responses": {
+          "values": [
+            {
+              "content": "=Write a balanced and professional news article of approximately 400 words based only on the following headline:\n\n{{$json.title}}\n\nRequirements:\n- Use clear and professional journalistic language.\n- Maintain a neutral and objective tone.\n- Do not copy text from real news articles.\n- Do not invent highly specific facts, quotes, statistics, or names unless logically necessary.\n- Avoid emotionally charged or politically biased language.\n- Structure the article with:\n  - Headline\n  - Introduction\n  - Main body\n  - Conclusion\n- The article should appear realistic but clearly be AI-generated from the headline only.\n- Focus on balanced reporting and avoid misinformation."
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.1,
+      "position": [
+        -1600,
+        -688
+      ],
+      "id": "a875fd87-8be8-482b-8f0a-6bb70d28311b",
+      "name": "LLM News Article Generator",
+      "credentials": {
+        "openAiApi": {
+          "id": "LpcpW3kZkg4UIOEL",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1f282afb-ccbc-472d-9cf5-d08db91ddbb4",
+              "name": "source",
+              "value": "={{$node[\"Article Preparation Layer\"].json.source}}",
+              "type": "string"
+            },
+            {
+              "id": "1792450a-6d43-4b8f-900d-9bf453c057bc",
+              "name": "title",
+              "value": "={{$node[\"Article Preparation Layer\"].json.title}}",
+              "type": "string"
+            },
+            {
+              "id": "116feb27-7074-4aaa-b0d0-2f7ee6d2acc3",
+              "name": "link",
+              "value": "={{$node[\"Article Preparation Layer\"].json.link}}",
+              "type": "string"
+            },
+            {
+              "id": "a5b1834c-3d9e-45fe-8e0d-fad9b9cc626f",
+              "name": "llm_article",
+              "value": "={{$json.output[0].content[0].text}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1248,
+        -688
+      ],
+      "id": "a8e1b94f-3ec6-4324-9bc9-3aa2a8aa61b2",
+      "name": "LLM Output Formatter"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -576,
+        -688
+      ],
+      "id": "4ce8a3bb-fb5b-44ab-9e90-1eae8a95336c",
+      "name": "LLM and Original Article Combiner"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1caa9983-cc42-42b1-a199-cc48ac9fa07d",
+              "name": "bbc_article_count",
+              "value": "={{$json.bbc_article_count}}",
+              "type": "string"
+            },
+            {
+              "id": "5089e21b-f28f-454f-8df1-48a6ef3c4c21",
+              "name": "guardian_article_count",
+              "value": "={{$json.guardian_article_count}}",
+              "type": "string"
+            },
+            {
+              "id": "1843a6b3-81a8-4f30-a143-5a2e196bf413",
+              "name": "bbc_average_bias",
+              "value": "={{$json.bbc_average_bias}}",
+              "type": "string"
+            },
+            {
+              "id": "6ef6322f-1d86-4dc1-8c0e-687fc7e1da61",
+              "name": "guardian_average_bias",
+              "value": "={{$json.guardian_average_bias}}",
+              "type": "string"
+            },
+            {
+              "id": "010004a3-2677-4d99-8ecd-1be57bc78983",
+              "name": "final_interpretation",
+              "value": "={{$json.final_interpretation}}",
+              "type": "string"
+            },
+            {
+              "id": "b1509358-752b-4e74-93a0-87ef99ae0b61",
+              "name": "bbc_misinformation_risk",
+              "value": "={{$json.bbc_misinformation_risk}}",
+              "type": "string"
+            },
+            {
+              "id": "3d0d259c-ba91-4a3b-8473-184d692664e3",
+              "name": "bbc_risk_level",
+              "value": "={{$json.bbc_risk_level}}",
+              "type": "string"
+            },
+            {
+              "id": "ceb8ddfb-23fc-4b46-8e87-39b7a8077278",
+              "name": "guardian_misinformation_risk",
+              "value": "={{$json.guardian_misinformation_risk}}",
+              "type": "string"
+            },
+            {
+              "id": "05839707-e44f-4009-b5c4-dce64427be41",
+              "name": "guardian_risk_level",
+              "value": "={{$json.guardian_risk_level}}",
+              "type": "string"
+            },
+            {
+              "id": "9ec6e4fa-4a50-4d6d-a24a-3c2e296e9943",
+              "name": "llm_misinformation_risk",
+              "value": "={{$json.llm_misinformation_risk}}",
+              "type": "string"
+            },
+            {
+              "id": "d5d61fb6-4773-4d35-964f-cbf55638fc95",
+              "name": "llm_risk_level",
+              "value": "={{$json.llm_risk_level}}",
+              "type": "string"
+            },
+            {
+              "id": "93f6d8cc-affb-4399-be54-67b998b5dfa4",
+              "name": "bias_verdict",
+              "value": "={{$json.bias_verdict}}",
+              "type": "string"
+            },
+            {
+              "id": "dc4aec6b-3ebb-4cc1-bae5-491c02b734a3",
+              "name": "misinformation_verdict",
+              "value": "={{$json.misinformation_verdict}}",
+              "type": "string"
+            },
+            {
+              "id": "7b14ba5c-46c3-4f44-8051-a1de2624d17c",
+              "name": "explanation",
+              "value": "={{$json.explanation}}",
+              "type": "string"
+            },
+            {
+              "id": "7650b93f-9859-4e29-a931-eddb0e190330",
+              "name": "final_interpretation",
+              "value": "={{$json.final_interpretation}}",
+              "type": "string"
+            },
+            {
+              "id": "9483bff3-311f-4a2f-90e2-f765e4a3fc88",
+              "name": "research_questions_answered",
+              "value": "={{$json.research_questions_answered}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        96,
+        -672
+      ],
+      "id": "a837fe82-ef67-40bb-948b-df6ba6605fa3",
+      "name": "Final Research Results Dashboard"
+    },
+    {
+      "parameters": {
+        "language": "pythonNative",
+        "pythonCode": "bbc_bias_scores = []\nguardian_bias_scores = []\n\nbbc_misinfo_scores = []\nguardian_misinfo_scores = []\nllm_misinfo_scores = []\n\nfor item in _items:\n    data = item[\"json\"]\n\n    source = data.get(\"source\", \"\")\n    bias = data.get(\"original_document_bias\", 0)\n    misinfo = data.get(\"misinformation_risk\", 0)\n\n    llm_misinfo_scores.append(misinfo)\n\n    if source == \"BBC\":\n        bbc_bias_scores.append(bias)\n        bbc_misinfo_scores.append(misinfo)\n\n    if source == \"Guardian\":\n        guardian_bias_scores.append(bias)\n        guardian_misinfo_scores.append(misinfo)\n\nbbc_count = len(bbc_bias_scores)\nguardian_count = len(guardian_bias_scores)\ntotal_count = len(_items)\n\nbbc_average_bias = sum(bbc_bias_scores) / bbc_count if bbc_count > 0 else 0\nguardian_average_bias = sum(guardian_bias_scores) / guardian_count if guardian_count > 0 else 0\n\nbbc_misinformation_risk = sum(bbc_misinfo_scores) / len(bbc_misinfo_scores) if len(bbc_misinfo_scores) > 0 else 0\nguardian_misinformation_risk = sum(guardian_misinfo_scores) / len(guardian_misinfo_scores) if len(guardian_misinfo_scores) > 0 else 0\nllm_misinformation_risk = sum(llm_misinfo_scores) / len(llm_misinfo_scores) if len(llm_misinfo_scores) > 0 else 0\n\n\ndef risk_level(score):\n    if score < 0.3:\n        return \"Low\"\n    elif score < 0.6:\n        return \"Medium\"\n    else:\n        return \"High\"\n\n\nbbc_risk_level = risk_level(bbc_misinformation_risk)\nguardian_risk_level = risk_level(guardian_misinformation_risk)\nllm_risk_level = risk_level(llm_misinformation_risk)\n\n\nif guardian_average_bias > bbc_average_bias:\n    bias_verdict = \"Guardian articles appear more biased overall.\"\nelif bbc_average_bias > guardian_average_bias:\n    bias_verdict = \"BBC articles appear more biased overall.\"\nelse:\n    bias_verdict = \"BBC and Guardian articles show similar bias levels.\"\n\n\nif bbc_misinformation_risk > guardian_misinformation_risk:\n    misinformation_verdict = \"BBC-generated articles show higher misinformation risk.\"\nelif guardian_misinformation_risk > bbc_misinformation_risk:\n    misinformation_verdict = \"Guardian-generated articles show higher misinformation risk.\"\nelse:\n    misinformation_verdict = \"BBC and Guardian generated articles show similar misinformation risk.\"\n\n\nexplanation = (\n    \"This analysis compares BBC and Guardian articles using word-level, \"\n    \"sentence-level, and document-level bias measurements. \"\n    \"It also calculates misinformation risk by comparing the LLM-generated article \"\n    \"with the original article. A higher misinformation risk means the generated \"\n    \"article has lower factual overlap with the original source and may contain \"\n    \"unsupported or hallucinated information.\"\n)\n\n\nfinal_interpretation = (\n    bias_verdict + \" \" +\n    misinformation_verdict + \" \" +\n    \"BBC misinformation risk is \" + str(round(bbc_misinformation_risk, 4)) +\n    \" (\" + bbc_risk_level + \"). \" +\n    \"Guardian misinformation risk is \" + str(round(guardian_misinformation_risk, 4)) +\n    \" (\" + guardian_risk_level + \"). \" +\n    \"Overall LLM misinformation risk is \" + str(round(llm_misinformation_risk, 4)) +\n    \" (\" + llm_risk_level + \").\"\n)\n\n\nresearch_questions_answered = [\n    \"Which news source shows higher average bias?\",\n    \"Which news source shows higher misinformation risk after LLM generation?\",\n    \"How much does the LLM-generated article differ from the original article?\",\n    \"Does the LLM reduce or increase biased language compared with the original source?\",\n    \"Can an automated agentic AI workflow compare bias and misinformation across BBC and Guardian articles?\"\n]\n\n\nreturn [\n    {\n        \"json\": {\n            \"total_articles_analysed\": total_count,\n\n            \"bbc_article_count\": bbc_count,\n            \"guardian_article_count\": guardian_count,\n\n            \"bbc_average_bias\": round(bbc_average_bias, 4),\n            \"guardian_average_bias\": round(guardian_average_bias, 4),\n\n            \"bbc_misinformation_risk\": round(bbc_misinformation_risk, 4),\n            \"bbc_risk_level\": bbc_risk_level,\n\n            \"guardian_misinformation_risk\": round(guardian_misinformation_risk, 4),\n            \"guardian_risk_level\": guardian_risk_level,\n\n            \"llm_misinformation_risk\": round(llm_misinformation_risk, 4),\n            \"llm_risk_level\": llm_risk_level,\n\n            \"bias_verdict\": bias_verdict,\n            \"misinformation_verdict\": misinformation_verdict,\n\n            \"explanation\": explanation,\n            \"final_interpretation\": final_interpretation,\n\n            \"research_questions_answered\": research_questions_answered\n        }\n    }\n]"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -128,
+        -688
+      ],
+      "id": "bf6a184f-ea4b-4f3f-940e-a76e9aadad5e",
+      "name": "BBC Guardian Comparison & Comparative Bias Evaluation Engine"
+    },
+    {
+      "parameters": {
+        "labelsUi": {
+          "labelsValues": [
+            {
+              "label": "BBC Average Bias"
+            },
+            {
+              "label": "Guardian Average Bias"
+            },
+            {
+              "label": "BBC Misinformation Risk"
+            },
+            {
+              "label": "Guardian Misinformation Risk"
+            }
+          ]
+        },
+        "data": "={{ { \"datasets\": [{ \"label\": \"Bias & Misinformation Metrics\", \"data\": [Number($json.bbc_average_bias), Number($json.guardian_average_bias), Number($json.bbc_misinformation_risk), Number($json.guardian_misinformation_risk)], \"backgroundColor\": [\"rgba(54, 162, 235, 0.6)\", \"rgba(255, 99, 132, 0.6)\", \"rgba(75, 192, 192, 0.6)\", \"rgba(255, 159, 64, 0.6)\"] }] } }}",
+        "output": "chart",
+        "chartOptions": {
+          "backgroundColor": "white",
+          "height": 500,
+          "width": 800
+        },
+        "datasetOptions": {}
+      },
+      "id": "463b8674-b489-4e6c-89ca-cc0dbc96af9d",
+      "name": "Comparative Bias Chart",
+      "type": "n8n-nodes-base.quickChart",
+      "typeVersion": 1,
+      "position": [
+        -2288,
+        1168
+      ],
+      "disabled": true
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "BBC RSS Feed Collector",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Guardian RSS Feed Collector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        []
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "HTML Extract with Python Code Node",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML Extract with Python Code Node": {
+      "main": [
+        [
+          {
+            "node": "LLM and Original Article Combiner",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Bias Analysis Python Node": {
+      "main": [
+        [
+          {
+            "node": "BBC Guardian Comparison & Comparative Bias Evaluation Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge2": {
+      "main": [
+        []
+      ]
+    },
+    "BBC RSS Feed Collector": {
+      "main": [
+        [
+          {
+            "node": "BBC Article Formatter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardian RSS Feed Collector": {
+      "main": [
+        [
+          {
+            "node": "Guardian Article Formatter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BBC Article Formatter": {
+      "main": [
+        [
+          {
+            "node": "BBC Article Limiter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardian Article Formatter": {
+      "main": [
+        [
+          {
+            "node": "Guardian Article Limiter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BBC Article Limiter": {
+      "main": [
+        [
+          {
+            "node": "BBC Guardian Article Merger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardian Article Limiter": {
+      "main": [
+        [
+          {
+            "node": "BBC Guardian Article Merger",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "BBC Guardian Article Merger": {
+      "main": [
+        [
+          {
+            "node": "Article Preparation Layer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Article Preparation Layer": {
+      "main": [
+        [
+          {
+            "node": "LLM News Article Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM News Article Generator": {
+      "main": [
+        [
+          {
+            "node": "LLM Output Formatter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Output Formatter": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "LLM and Original Article Combiner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM and Original Article Combiner": {
+      "main": [
+        [
+          {
+            "node": "Bias Analysis Python Node",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BBC Guardian Comparison & Comparative Bias Evaluation Engine": {
+      "main": [
+        [
+          {
+            "node": "Final Research Results Dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final Research Results Dashboard": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "68efb5ac-c7c4-4098-80ca-038009ad802c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3db57092eb2e46863f72134fc5a410a698379d8a765ca49ff01ad95d510eca43"
+  },
+  "nodeGroups": [],
+  "id": "zfnKi3E4OkEbdmkx",
+  "tags": []
+}
